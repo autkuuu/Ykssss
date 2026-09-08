@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <!-- Tam ekran ve ölçekleme ayarları -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>YKS Sayısal - Flip Clock & Çalışma Takibi</title>
+  <meta name="theme-color" content="#000000">
+  
+  <!-- Tam ekran (Fullscreen) uygulama gibi çalışmasını sağlayan etiketler -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="YKS Takip">
+  <meta name="mobile-web-app-capable" content="yes">
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <style>
+    :root {
+      --bg-black: #050507;
+      --card-bg: #0a0a0c; /* Daha koyu, siyaha yakın renk */
+      --card-border: #1f1f23;
+      --text-white: #f5f5f7;
+      --text-muted: #8e8e93;
+      --accent: #0a84ff;
+      --accent-green: #a855f7;
+    }
+
+    * {
+      box-sizing: border-box; margin: 0; padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Uzun basıldığında çıkan menüleri ve metin seçimini iptal eder */
+    body {
+      background: radial-gradient(circle at 50% -20%, #3e1b59, var(--bg-black) 70%);
+      color: var(--text-white); height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+
+    .viewport { touch-action: pan-y; flex: 1; width: 100%; position: relative; overflow: hidden; padding-bottom: 95px; }
+
+    .slider {
+      display: flex; width: 300%; height: 100%; transform: translateX(-33.333333%);
+      transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1); will-change: transform;
+    }
+
+    .page { width: 33.333333%; height: 100%; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; }
+
+    /* Saati yaklaşık 2-3 cm yukarı iten ayar */
+    #page-clock { justify-content: center; gap: 20px; padding-bottom: 12vh; }
+
+    .welcome-banner {
+      background: linear-gradient(135deg, #241c28, #18141c); border: 1px solid #3c2942; border-radius: 16px;
+      padding: 20px; text-align: center; margin-bottom: 20px; width: 100%;
+    }
+    .welcome-title { font-size: 1.25rem; font-weight: 700; color: #ffd60a; margin-bottom: 6px; }
+    .welcome-subtitle { font-size: 0.85rem; color: var(--text-muted); }
+
+    .clock-date {
+      font-size: 1.25rem; font-weight: 500; color: rgba(255,255,255,0.8); letter-spacing: 2px;
+      margin-bottom: 25px; text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+
+    .clock-container { display: flex; align-items: center; justify-content: center; gap: 4vw; width: 100%; }
+    .flip-card-wrapper { display: flex; flex-direction: column; align-items: center; position: relative; }
+    
+    .flip-unit {
+      position: relative;
+      width: min(44vw, 260px); /* Kutular daha kare oldu */
+      height: min(48vw, 290px);
+      background-color: var(--card-bg); 
+      border-radius: 20px;
+      font-size: min(35vw, 210px); 
+      font-weight: 700; 
+      line-height: min(48vw, 290px); 
+      text-align: center; color: #f0f0f2;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.9), inset 0 0 0 1px var(--card-border);
+      perspective: 1500px;
+    }
+    
+    .clock-sep { font-size: min(20vw, 120px); font-weight: 700; color: rgba(255,255,255,0.5); margin-top: -10px; text-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+    
+    .flip-unit * { backface-visibility: hidden; -webkit-backface-visibility: hidden; transform-style: preserve-3d; }
+    .card-top, .card-bottom, .card-flip-top, .card-flip-bottom { 
+      position: absolute; left: 0; width: 100%; height: 50%; overflow: hidden; 
+      background-color: var(--card-bg); 
+      color: #f0f0f2;
+    }
+    
+    .card-top, .card-flip-top { top: 0; border-top-left-radius: 20px; border-top-right-radius: 20px; line-height: min(48vw, 290px); transform-origin: 50% 100%; }
+    .card-bottom, .card-flip-bottom { bottom: 0; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; line-height: 0; transform-origin: 50% 0%; border-top: none; }
+    
+    .card-flip-top { z-index: 2; animation: flipTop 0.45s ease-in forwards; }
+    .card-flip-bottom { z-index: 3; transform: rotateX(90deg); animation: flipBottom 0.45s ease-out 0.45s forwards; }
+
+    @keyframes flipTop { 0% { transform: rotateX(0deg); } 100% { transform: rotateX(-90deg); } }
+    @keyframes flipBottom { 0% { transform: rotateX(90deg); } 100% { transform: rotateX(0deg); } }
+
+    /* Rakamları kesen gerçekçi fiziksel çizgi ve menteşeler */
+    .flip-seam {
+      position: absolute; top: calc(50% - 2px); left: 0; width: 100%; height: 4px;
+      background-color: #050507; z-index: 20;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.8);
+      transform: translateZ(10px); /* Çizginin dönen sayının üstünde kalmasını garanti eder */
+    }
+
+    .flip-holes {
+      position: absolute; top: calc(50% - 10px); left: 0; width: 100%; height: 20px;
+      background: radial-gradient(circle at 0% 50%, #000 10px, transparent 11px),
+                  radial-gradient(circle at 100% 50%, #000 10px, transparent 11px);
+      z-index: 21; pointer-events: none;
+      transform: translateZ(11px);
+    }
+
+    /* DEEP GLASS BOTTOM BAR */
+    .ios-bottom-bar {
+      position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; padding: 6px; border-radius: 999px; z-index: 100;
+      background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.05) 100%);
+      backdrop-filter: blur(40px) saturate(250%); -webkit-backdrop-filter: blur(40px) saturate(250%);
+      border-top: 1px solid rgba(255, 255, 255, 0.4); border-left: 1px solid rgba(255, 255, 255, 0.3);
+      border-right: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.5), inset 0 2px 10px rgba(255,255,255,0.25);
+      touch-action: none; 
+    }
+
+    .nav-indicator {
+      position: absolute; top: 6px; bottom: 6px; left: 0; width: 0;
+      background: rgba(255, 255, 255, 0.35); border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 999px; z-index: 1;
+      transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1), width 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.25), inset 0 2px 5px rgba(255,255,255,0.6);
+    }
+
+    .nav-item { position: relative; z-index: 2; padding: 12px 26px; color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: color 0.3s; letter-spacing: 0.3px; }
+    .nav-item.active { color: #fff; text-shadow: 0 2px 10px rgba(255,255,255,0.4); }
+
+    .total-study-card { background: rgba(30, 30, 35, 0.4); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 20px; text-align: center; margin-bottom: 20px; width: 100%; }
+    .total-study-card span { font-size: 0.85rem; color: var(--text-muted); }
+    .total-study-time { font-size: 2.5rem; font-weight: 700; color: var(--accent-green); margin-top: 5px; }
+    .section-title { font-size: 1.1rem; font-weight: 600; margin: 15px 0 10px 4px; color: var(--accent); width: 100%;}
+    .lesson-grid { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; width: 100%; }
+    .lesson-box { background-color: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+    .lesson-box.active { border-color: var(--accent-green); background-color: #201229; }
+    .lesson-info { display: flex; flex-direction: column; gap: 4px; }
+    .lesson-name { font-size: 1rem; font-weight: 600; color: var(--text-white); }
+    .lesson-badge { font-size: 0.7rem; color: var(--text-muted); }
+    .lesson-actions { display: flex; align-items: center; gap: 14px; }
+    .lesson-timer { font-size: 1.05rem; font-weight: 600; color: #e5e5ea; font-variant-numeric: tabular-nums;}
+    .lesson-box.active .lesson-timer { color: var(--accent-green); }
+    
+    .action-btn { min-width: 106px; height: 46px; border-radius: 999px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 700; transition: transform 0.15s, background-color 0.2s, box-shadow 0.2s; }
+    .action-btn:active { transform: scale(0.93); }
+    .btn-start { background-color: #2c2c30; color: var(--accent-green); }
+    .btn-stop { background-color: var(--accent-green); color: #fff; box-shadow: 0 0 16px rgba(168, 85, 247, 0.5); }
+
+    #page-calendar, #page-studies { max-width: 600px; margin: 0 auto; width: 100%; }
+    .calendar-container { background-color: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-bottom: 20px; width: 100%; }
+    .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .calendar-month { font-size: 1.1rem; font-weight: 600; }
+    .cal-nav-btn { background: none; border: none; color: var(--accent); font-size: 1.2rem; cursor: pointer; padding: 0 10px;}
+    .calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; }
+    .calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 0.85rem; color: #ccc; cursor: pointer; position: relative; }
+    .cal-day.today { border: 1px solid var(--accent); font-weight: 700; color: #fff; }
+    .cal-day.studied::after { content: ""; position: absolute; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background-color: var(--accent-green); }
+    
+    .modal-overlay { 
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); 
+      z-index: 999; visibility: hidden; opacity: 0; transition: opacity 0.4s ease; 
+    }
+    .modal-overlay.active { visibility: visible; opacity: 1; }
+    
+    .day-detail-panel { 
+      position: fixed; top: 50%; left: 50%; 
+      transform: translate(-50%, -40%) scale(0.9); z-index: 1000; width: 90%; max-width: 380px; 
+      background: rgba(32, 18, 41, 0.95); backdrop-filter: blur(20px); 
+      border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px; padding: 20px 24px; 
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8); visibility: hidden; opacity: 0; 
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+    }
+    .day-detail-panel.open { visibility: visible; opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    
+    .day-detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .day-detail-title { font-weight: 700; font-size: 1.1rem; }
+    .day-detail-close { background: rgba(255, 255, 255, 0.1); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;}
+    .day-detail-total { background: rgba(168, 85, 247, 0.15); padding: 16px; border-radius: 14px; text-align: center; margin-bottom: 16px; border: 1px solid rgba(168,85,247,0.3); }
+    .day-detail-total-value { font-size: 1.8rem; font-weight: 700; color: var(--accent-green); font-variant-numeric: tabular-nums;}
+    .day-detail-row { display: flex; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 12px 14px; border-radius: 10px; margin-bottom: 8px;}
+  </style>
+</head>
+<body>
+  
+  <div class="modal-overlay" id="modalOverlay"></div>
+
+  <div class="day-detail-panel" id="dayDetailPanel">
+    <div class="day-detail-header">
+      <div class="day-detail-title" id="dayDetailTitle">Gün Detayı</div>
+      <button class="day-detail-close" id="dayDetailCloseBtn">&times;</button>
+    </div>
+    <div class="day-detail-total">
+      <div style="font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">Toplam Çalışma</div>
+      <div class="day-detail-total-value" id="dayDetailTotal">00:00:00</div>
+    </div>
+    <div id="dayDetailList"></div>
+  </div>
+
+  <div class="viewport" id="viewport">
+    <div class="slider" id="slider">
+      <section class="page" id="page-calendar">
+        <div class="welcome-banner">
+          <div class="welcome-title">Hoş Geldiniz Keyifli Saatler Dilerim</div>
+          <div class="welcome-subtitle">Hedefine giden yolda her saniye kıymetli.</div>
+        </div>
+        <div class="calendar-container">
+          <div class="calendar-header">
+            <button class="cal-nav-btn" id="prevMonthBtn">&lt;</button>
+            <div class="calendar-month" id="calendarMonthTitle">Eylül 2026</div>
+            <button class="cal-nav-btn" id="nextMonthBtn">&gt;</button>
+          </div>
+          <div class="calendar-weekdays">
+            <div>Pzt</div><div>Sal</div><div>Çar</div><div>Per</div><div>Cum</div><div>Cmt</div><div>Paz</div>
+          </div>
+          <div class="calendar-days" id="calendarDays"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-clock">
+        <div class="clock-date" id="flipDate">08.09.26</div>
+        <div class="clock-container">
+          <div class="flip-card-wrapper">
+            <!-- Statik Başlangıç Kutuları -->
+            <div class="flip-unit" id="hoursUnit">
+              <div class="card-top">20</div>
+              <div class="card-bottom">20</div>
+              <div class="flip-seam"></div>
+              <div class="flip-holes"></div>
+              <span id="hoursText" style="display:none;">20</span>
+            </div>
+          </div>
+          <div class="clock-sep">:</div>
+          <div class="flip-card-wrapper">
+            <div class="flip-unit" id="minutesUnit">
+              <div class="card-top">15</div>
+              <div class="card-bottom">15</div>
+              <div class="flip-seam"></div>
+              <div class="flip-holes"></div>
+              <span id="minutesText" style="display:none;">15</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-studies">
+        <div class="total-study-card">
+          <span>Bugünkü Toplam Çalışma Süresi</span>
+          <div class="total-study-time" id="panelTotalTime">00:00:00</div>
+        </div>
+        <div class="section-title">TYT Dersleri</div>
+        <div class="lesson-grid" id="tytGrid"></div>
+        <div class="section-title">AYT Sayısal Dersleri</div>
+        <div class="lesson-grid" id="aytGrid"></div>
+      </section>
+    </div>
+  </div>
+
+  <nav class="ios-bottom-bar" id="bottomBar">
+    <div class="nav-indicator"></div>
+    <div class="nav-item" data-index="0">Takvim</div>
+    <div class="nav-item active" data-index="1">Saat</div>
+    <div class="nav-item" data-index="2">Dersler</div>
+  </nav>
+
+  <script>
+    // Sağ tık, uzun basma menülerini tamamen engeller
+    window.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+    const lessonsData = {
+      tyt: [
+        { id: "tyt_turkce", name: "TYT Türkçe" }, { id: "tyt_mat", name: "TYT Matematik" },
+        { id: "tyt_geo", name: "Geometri" }, { id: "tyt_fizik", name: "TYT Fizik" },
+        { id: "tyt_kimya", name: "TYT Kimya" }, { id: "tyt_biyo", name: "TYT Biyoloji" },
+        { id: "tyt_sosyal", name: "TYT Sosyal Bilimler" }
+      ],
+      ayt: [
+        { id: "ayt_mat", name: "AYT Matematik" }, { id: "ayt_geo", name: "AYT Geometri" },
+        { id: "ayt_fizik", name: "AYT Fizik" }, { id: "ayt_kimya", name: "AYT Kimya" },
+        { id: "ayt_biyo", name: "AYT Biyoloji" }
+      ]
+    };
+    const lessonNameById = {};
+    [...lessonsData.tyt, ...lessonsData.ayt].forEach(l => { lessonNameById[l.id] = l.name; });
+
+    let storage = JSON.parse(localStorage.getItem("yks_study_app") || "{}");
+    function getTodayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+    const todayKey = getTodayKey();
+    if (!storage[todayKey]) storage[todayKey] = {};
+    function saveStorage() { localStorage.setItem("yks_study_app", JSON.stringify(storage)); }
+
+    let activeLessonId = null, timerInterval = null;
+    function formatDuration(totalSeconds) {
+      const h = Math.floor(totalSeconds / 3600), m = Math.floor((totalSeconds % 3600) / 60), s = totalSeconds % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function renderLessons() {
+      const tytGrid = document.getElementById("tytGrid"), aytGrid = document.getElementById("aytGrid");
+      tytGrid.innerHTML = ""; aytGrid.innerHTML = "";
+      
+      const createBox = (l, cat) => {
+        const sec = storage[todayKey][l.id] || 0;
+        return `<div class="lesson-box" id="box_${l.id}">
+          <div class="lesson-info"><div class="lesson-name">${l.name}</div><div class="lesson-badge">${cat}</div></div>
+          <div class="lesson-actions">
+            <div class="lesson-timer" id="timer_${l.id}">${formatDuration(sec)}</div>
+            <button class="action-btn btn-start" id="btn_${l.id}" onclick="toggleLesson('${l.id}')">&#9654; Başlat</button>
+          </div></div>`;
+      };
+      
+      lessonsData.tyt.forEach(l => tytGrid.innerHTML += createBox(l, "TYT"));
+      lessonsData.ayt.forEach(l => aytGrid.innerHTML += createBox(l, "AYT"));
+      updateTotalDisplay();
+    }
+
+    function toggleLesson(lessonId) {
+      if (activeLessonId === lessonId) stopTimer(); else { stopTimer(); startTimer(lessonId); }
+    }
+
+    function startTimer(lessonId) {
+      activeLessonId = lessonId;
+      document.getElementById(`box_${lessonId}`).classList.add("active");
+      const btn = document.getElementById(`btn_${lessonId}`); btn.className = "action-btn btn-stop"; btn.innerHTML = "&#10074;&#10074; Durdur";
+      timerInterval = setInterval(() => {
+        storage[todayKey][activeLessonId] = (storage[todayKey][activeLessonId] || 0) + 1;
+        document.getElementById(`timer_${activeLessonId}`).textContent = formatDuration(storage[todayKey][activeLessonId]);
+        updateTotalDisplay();
+      }, 1000);
+    }
+
+    function stopTimer() {
+      if (!activeLessonId) return;
+      clearInterval(timerInterval);
+      document.getElementById(`box_${activeLessonId}`).classList.remove("active");
+      const btn = document.getElementById(`btn_${activeLessonId}`); btn.className = "action-btn btn-start"; btn.innerHTML = "&#9654; Başlat";
+      saveStorage(); activeLessonId = null; renderCalendar();
+    }
+
+    function updateTotalDisplay() {
+      const total = Object.values(storage[todayKey] || {}).reduce((a, b) => a + (b || 0), 0);
+      document.getElementById("panelTotalTime").textContent = formatDuration(total);
+    }
+
+    let lastHour = "", lastMinute = "";
+    function updateFlipClock() {
+      const now = new Date();
+      document.getElementById("flipDate").textContent = `${String(now.getDate()).padStart(2,'0')}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getFullYear()).slice(-2)}`;
+      const h = String(now.getHours()).padStart(2, '0'), m = String(now.getMinutes()).padStart(2, '0');
+      if (h !== lastHour) { flipCard("hoursUnit", "hoursText", h); lastHour = h; }
+      if (m !== lastMinute) { flipCard("minutesUnit", "minutesText", m); lastMinute = m; }
+    }
+
+    function flipCard(unitId, textId, newVal) {
+      const unit = document.getElementById(unitId), textElem = document.getElementById(textId);
+      if (!textElem) return;
+      if (!textElem.textContent) { textElem.textContent = newVal; return; }
+      const oldVal = textElem.textContent; if (oldVal === newVal) return;
+      
+      // Çizgi (seam) ve delik (holes) yapısı DOM'a sabit olarak gömüldü, numaralar arkada bölünüyor
+      unit.innerHTML = `
+        <div class="card-top">${newVal}</div>
+        <div class="card-bottom">${oldVal}</div>
+        <div class="card-flip-top">${oldVal}</div>
+        <div class="card-flip-bottom">${newVal}</div>
+        <div class="flip-seam"></div>
+        <div class="flip-holes"></div>
+        <span id="${textId}" style="display:none;">${newVal}</span>
+      `;
+      
+      setTimeout(() => { 
+        unit.innerHTML = `
+          <div class="card-top">${newVal}</div>
+          <div class="card-bottom">${newVal}</div>
+          <div class="flip-seam"></div>
+          <div class="flip-holes"></div>
+          <span id="${textId}" style="display:none;">${newVal}</span>
+        `; 
+      }, 900);
+    }
+    setInterval(updateFlipClock, 1000); updateFlipClock();
+
+    let calDate = new Date();
+    const monthsTr = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+    function renderCalendar() {
+      const year = calDate.getFullYear(), month = calDate.getMonth();
+      document.getElementById("calendarMonthTitle").textContent = `${monthsTr[month]} ${year}`;
+      const container = document.getElementById("calendarDays"); container.innerHTML = "";
+      const firstDay = (new Date(year, month, 1).getDay() + 6) % 7, totalDays = new Date(year, month + 1, 0).getDate();
+      for (let i = 0; i < firstDay; i++) container.innerHTML += `<div class="cal-day"></div>`;
+      for (let day = 1; day <= totalDays; day++) {
+        const dKey = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        let classes = "cal-day";
+        if (year === new Date().getFullYear() && month === new Date().getMonth() && day === new Date().getDate()) classes += " today";
+        const worked = Object.values(storage[dKey] || {}).reduce((a, b) => a + b, 0);
+        if (worked > 0) classes += " studied";
+        const div = document.createElement("div"); div.className = classes; div.textContent = day; 
+        div.onclick = () => openDayModal(dKey, day, month, year);
+        container.appendChild(div);
+      }
+    }
+    document.getElementById("prevMonthBtn").onclick = () => { calDate.setMonth(calDate.getMonth() - 1); renderCalendar(); };
+    document.getElementById("nextMonthBtn").onclick = () => { calDate.setMonth(calDate.getMonth() + 1); renderCalendar(); };
+
+    function openDayModal(dateKey, day, month, year) {
+      document.getElementById("dayDetailTitle").textContent = `${day} ${monthsTr[month]} ${year}`;
+      const entries = Object.entries(storage[dateKey] || {}).filter(([, s]) => s > 0);
+      const total = entries.reduce((a, [, s]) => a + s, 0);
+      document.getElementById("dayDetailTotal").textContent = formatDuration(total);
+      const list = document.getElementById("dayDetailList"); list.innerHTML = "";
+      if (entries.length === 0) list.innerHTML = `<div style="text-align:center; color:#8e8e93; font-size:0.9rem; padding: 20px;">Kayıt yok.</div>`;
+      else entries.sort((a,b)=>b[1]-a[1]).forEach(([id, sec]) => {
+        list.innerHTML += `<div class="day-detail-row"><span style="color:#f5f5f7; font-weight:500;">${lessonNameById[id]||id}</span><span style="color:#a855f7; font-weight:bold;">${formatDuration(sec)}</span></div>`;
+      });
+      document.getElementById("modalOverlay").classList.add("active");
+      document.getElementById("dayDetailPanel").classList.add("open");
+    }
+    
+    function closeDayModal() {
+      document.getElementById("modalOverlay").classList.remove("active");
+      document.getElementById("dayDetailPanel").classList.remove("open");
+    }
+    document.getElementById("dayDetailCloseBtn").onclick = closeDayModal;
+    document.getElementById("modalOverlay").onclick = closeDayModal;
+
+    let currentPage = 1;
+    const slider = document.getElementById("slider");
+    const navItems = document.querySelectorAll(".nav-item");
+    const navIndicator = document.querySelector(".nav-indicator");
+    
+    function updateIndicator() {
+      const activeItem = document.querySelector(".nav-item.active");
+      if (activeItem && navIndicator) {
+        navIndicator.style.width = `${activeItem.offsetWidth}px`;
+        navIndicator.style.transform = `translateX(${activeItem.offsetLeft}px)`;
+      }
+    }
+
+    function goToPage(index) {
+      if (index < 0 || index > 2) return;
+      currentPage = index;
+      slider.style.transform = `translateX(-${currentPage * 33.333333}%)`;
+      navItems.forEach((item, idx) => item.classList.toggle("active", idx === currentPage));
+      updateIndicator();
+    }
+
+    navItems.forEach(item => {
+      item.addEventListener("click", () => goToPage(parseInt(item.getAttribute("data-index"))));
+    });
+    window.addEventListener("resize", updateIndicator);
+    setTimeout(updateIndicator, 100);
+
+    const bottomBar = document.getElementById("bottomBar");
+    let barDragging = false;
+
+    function handleBarScrub(e) {
+      const touch = e.touches[0];
+      const barRect = bottomBar.getBoundingClientRect();
+      let x = touch.clientX - barRect.left;
+      x = Math.max(0, Math.min(x, barRect.width));
+      
+      const segment = barRect.width / 3;
+      let targetPage = Math.floor(x / segment);
+      if (targetPage > 2) targetPage = 2; 
+
+      if (currentPage !== targetPage) {
+        goToPage(targetPage);
+      }
+    }
+
+    bottomBar.addEventListener("touchstart", (e) => { barDragging = true; handleBarScrub(e); }, { passive: true });
+    bottomBar.addEventListener("touchmove", (e) => { 
+      if (!barDragging) return; 
+      e.preventDefault(); 
+      handleBarScrub(e); 
+    }, { passive: false });
+    bottomBar.addEventListener("touchend", () => { barDragging = false; }, { passive: true });
+
+    let touchStartX = 0, touchStartY = 0, isDragging = false, dragAxis = null, lastDeltaX = 0;
+    const viewport = document.getElementById("viewport");
+
+    viewport.addEventListener("touchstart", (e) => { 
+      if (e.target.closest('#bottomBar')) return; 
+      touchStartX = e.touches[0].clientX; 
+      touchStartY = e.touches[0].clientY;
+      isDragging = true; 
+      dragAxis = null;
+      slider.style.transition = "none";
+      navIndicator.style.transition = "none";
+    }, { passive: true });
+      
+    viewport.addEventListener("touchmove", (e) => {
+      if (!isDragging) return;
+      const deltaX = e.touches[0].clientX - touchStartX; 
+      const deltaY = e.touches[0].clientY - touchStartY;
+      
+      if (dragAxis === null) {
+        if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) dragAxis = Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+      }
+      if (dragAxis === "y") return; 
+      if (e.cancelable) e.preventDefault(); 
+      lastDeltaX = deltaX;
+      
+      const deltaPercent = (deltaX / window.innerWidth) * 33.333333;
+      let newTranslate = -(currentPage * 33.333333) + deltaPercent;
+      newTranslate = Math.max(-66.666666, Math.min(0, newTranslate));
+      slider.style.transform = `translateX(${newTranslate}%)`;
+
+      const activeItem = navItems[currentPage];
+      const targetItem = navItems[deltaX < 0 ? currentPage + 1 : currentPage - 1];
+      if (activeItem && targetItem) {
+        const moveRatio = Math.abs(deltaX) / window.innerWidth;
+        const newWidth = activeItem.offsetWidth + (targetItem.offsetWidth - activeItem.offsetWidth) * moveRatio;
+        const dist = (targetItem.offsetLeft - activeItem.offsetLeft) * moveRatio;
+        navIndicator.style.width = `${newWidth}px`;
+        navIndicator.style.transform = `translateX(${activeItem.offsetLeft + dist}px)`;
+      }
+    }, { passive: false });
+      
+    viewport.addEventListener("touchend", () => {
+      if (!isDragging) return; 
+      isDragging = false;
+      slider.style.transition = "transform 0.6s cubic-bezier(0.25, 1, 0.5, 1)";
+      navIndicator.style.transition = "transform 0.6s cubic-bezier(0.25, 1, 0.5, 1), width 0.6s cubic-bezier(0.25, 1, 0.5, 1)";
+      
+      const threshold = window.innerWidth * 0.16;
+      if (lastDeltaX < -threshold) goToPage(currentPage + 1);
+      else if (lastDeltaX > threshold) goToPage(currentPage - 1);
+      else goToPage(currentPage);
+      
+      lastDeltaX = 0; dragAxis = null;
+    }, { passive: true });
+
+    renderLessons(); renderCalendar();
+  </script>
+</body>
+</html>
